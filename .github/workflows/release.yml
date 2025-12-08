@@ -62,8 +62,8 @@ jobs:
 
       - name: Create and push tag
         run: |
-          git tag -a "v${{ inputs.version }}" -m "Release v${{ inputs.version }}"
-          git push origin "v${{ inputs.version }}"
+          git tag "${{ inputs.version }}"
+          git push origin "${{ inputs.version }}"
 
       - name: Get merged PR titles and format release notes
         id: changelog
@@ -98,8 +98,8 @@ jobs:
 
       - name: Create GitHub Release
         run: |
-          gh release create "${{ steps.version.outputs.version }}" \
-            --title "${{ steps.version.outputs.version }}" \
+          gh release create "${{ inputs.version }}" \
+            --title "${{ inputs.version }}" \
             --notes "${{ env.RELEASE_NOTES }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -119,18 +119,3 @@ jobs:
       #     }
       #     EOF
       #   continue-on-error: true
-
-      - name: Release Summary
-        run: |
-          echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** v${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** ${{ inputs.branch }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Changes:**" >> $GITHUB_STEP_SUMMARY
-          echo "${{ inputs.overview }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Version files updated" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Tag v${{ inputs.version }} created" >> $GITHUB_STEP_SUMMARY
-          echo "✅ GitHub release published" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Readme.com changelog updated" >> $GITHUB_STEP_SUMMARY
