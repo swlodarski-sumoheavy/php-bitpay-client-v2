@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to release from"
+        required: true
+        default: "master"
+        type: string
+      version:
+        description: "Version number (e.g., 9.3.3)"
+        required: true
+        type: string
+      overview:
+        description: "Release overview (will be placed at top of notes)"
+        required: true
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: 0
+
+      - name: Validate version format
+        run: |
+          if [[ ! "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Version must be in format X.Y.Z (e.g., 9.3.3)"
+            exit 1
+          fi
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+      - name: Update Env.php version
+        run: |
+          VERSION="${{ inputs.version }}"
+          sed -i "s/public const BITPAY_PLUGIN_INFO = \"BitPay_PHP_Client_v[0-9.]*\";/public const BITPAY_PLUGIN_INFO = \"BitPay_PHP_Client_v${VERSION}\";/" src/BitPaySDK/Env.php
+          echo "Updated Env.php with version ${VERSION}"
+          cat src/BitPaySDK/Env.php | grep BITPAY_PLUGIN_INFO
+
+      - name: Update phpdoc.dist.xml version
+        run: |
+          VERSION="${{ inputs.version }}"
+          sed -i "s/<version number=\"[0-9.]*\">/<version number=\"${VERSION}\">/" phpdoc.dist.xml
+          echo "Updated phpdoc.dist.xml with version ${VERSION}"
+          cat phpdoc.dist.xml | grep -A 1 "<version number"
+
+      - name: Commit version updates
+        run: |
+          git add src/BitPaySDK/Env.php phpdoc.dist.xml
+          git commit -m "Bump version to ${{ inputs.version }}"
+          git push origin ${{ inputs.branch }}
+
+      - name: Create and push tag
+        run: |
+          git tag -a "v${{ inputs.version }}" -m "Release v${{ inputs.version }}"
+          git push origin "v${{ inputs.version }}"
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ inputs.version }}
+          release_name: Release v${{ inputs.version }}
+          body: ${{ inputs.overview }}
+          draft: false
+          prerelease: false
+
+      # - name: Push to Readme.com Changelog API
+      #   run: |
+      #     curl -X POST "https://dash.readme.com/api/v1/changelogs" \
+      #       -H "Authorization: Basic ${{ secrets.README_API_KEY }}" \
+      #       -H "Content-Type: application/json" \
+      #       -H "x-readme-version: latest" \
+      #       -d @- <<EOF
+      #     {
+      #       "title": "v${{ inputs.version }}",
+      #       "body": "${{ inputs.overview }}",
+      #       "type": "added",
+      #       "hidden": false
+      #     }
+      #     EOF
+      #   continue-on-error: true
+
+      - name: Release Summary
+        run: |
+          echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** v${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ inputs.branch }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Changes:**" >> $GITHUB_STEP_SUMMARY
+          echo "${{ inputs.overview }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Version files updated" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Tag v${{ inputs.version }} created" >> $GITHUB_STEP_SUMMARY
+          echo "✅ GitHub release published" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Readme.com changelog updated" >> $GITHUB_STEP_SUMMARY
