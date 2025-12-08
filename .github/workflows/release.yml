@@ -104,18 +104,49 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # - name: Push to Readme.com Changelog API
-      #   run: |
-      #     curl -X POST "https://dash.readme.com/api/v1/changelogs" \
-      #       -H "Authorization: Basic ${{ secrets.README_API_KEY }}" \
-      #       -H "Content-Type: application/json" \
-      #       -H "x-readme-version: latest" \
-      #       -d @- <<EOF
-      #     {
-      #       "title": "v${{ inputs.version }}",
-      #       "body": "${{ inputs.overview }}",
-      #       "type": "added",
-      #       "hidden": false
-      #     }
-      #     EOF
-      #   continue-on-error: true
+  readme-changelog:
+    name: Publish changelog to Readme
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Extract release data
+        id: release_data
+        run: |
+          echo "title=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          body=$(gh release view ${{ inputs.version }} --json body --jq .body)
+          body_escaped=$(echo "$body" \
+            | sed 's/&/\&#38;/g' \
+            | sed 's/</\&#60;/g' \
+            | sed 's/>/\&#62;/g' \
+            | sed 's/{/\&#123;/g' \
+            | sed 's/}/\&#125;/g')
+          {
+            echo "body<<EOF"
+            echo "$body_escaped"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish changelog to Readme
+        env:
+          README_API_KEY: ${{ secrets.README_API_KEY }}
+        run: |
+          jq -n --arg title "Node.js Unified SDK v${{ steps.release_data.outputs.title }}" \
+                --arg body "${{ steps.release_data.outputs.body }}" \
+                '{
+                  title: $title,
+                  content: {
+                    body: $body
+                  },
+                  privacy: { view: "public" }
+                }' > payload.json
+
+          curl --location 'https://api.readme.com/v2/changelogs' \
+            --header "Authorization: Bearer $README_API_KEY" \
+            --header 'Content-Type: application/json' \
+            --data @payload.json
