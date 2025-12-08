@@ -65,16 +65,44 @@ jobs:
           git tag -a "v${{ inputs.version }}" -m "Release v${{ inputs.version }}"
           git push origin "v${{ inputs.version }}"
 
-      - name: Create GitHub Release
-        uses: actions/create-release@v1
+      - name: Get merged PR titles and format release notes
+        id: changelog
+        run: |
+          git fetch --tags
+
+          # Get most recent and previous tags
+          tags=($(git tag --sort=-creatordate))
+          new_tag="${tags[0]}"
+          prev_tag="${tags[1]}"
+
+          if [ -z "$prev_tag" ]; then
+            echo "Warning: No previous tag found. Skipping full changelog link."
+            changelog=""
+          else
+            changelog="**Full Changelog**: https://github.com/${{ github.repository }}/compare/$prev_tag...$new_tag"
+          fi
+
+          prs=$(gh pr list --state merged --base "${{ inputs.branch }}" --json title,mergedAt --jq '[.[] | select(.mergedAt != null) | .title]')
+          joined=$(echo "$prs" | jq -r '.[]' | sed 's/^/* /')
+
+          echo "RELEASE_NOTES<<EOF" >> $GITHUB_ENV
+          echo "${{ github.event.inputs.overview }}" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "## What's Changed" >> $GITHUB_ENV
+          echo "$joined" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "$changelog" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: v${{ inputs.version }}
-          release_name: Release v${{ inputs.version }}
-          body: ${{ inputs.overview }}
-          draft: false
-          prerelease: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
+        run: |
+          gh release create "${{ steps.version.outputs.version }}" \
+            --title "${{ steps.version.outputs.version }}" \
+            --notes "${{ env.RELEASE_NOTES }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # - name: Push to Readme.com Changelog API
       #   run: |
